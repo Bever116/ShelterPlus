@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+.env
+.env.local
+.env.development
+.env.production
+.next
+apps/api/dist
+pnpm-lock.yaml
+.DS_Store
+docker-data

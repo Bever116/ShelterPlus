@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../apps/api/node_modules/@prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PlayerStatus {
+  ALIVE
+  OUT
+}
+
+enum PlayerRole {
+  PLAYER
+  SPECTATOR
+}
+
+enum CardCategory {
+  Profession
+  Bio
+  Health
+  Hobby
+  Phobia
+  Personality
+  ExtraInfo
+  Knowledge
+  Luggage
+  ActionCard
+  ConditionCard
+}
+
+model Lobby {
+  id                String            @id @default(uuid())
+  mode              LobbyMode
+  rounds            Int
+  minuteDurationSec Int
+  enabledCategories Json
+  channelsConfig    Json
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  players           LobbyPlayer[]
+  game              Game?
+}
+
+enum LobbyMode {
+  OFFICIAL
+  CUSTOM
+  WEB
+}
+
+model LobbyPlayer {
+  id        String   @id @default(uuid())
+  lobby     Lobby    @relation(fields: [lobbyId], references: [id], onDelete: Cascade)
+  lobbyId   String
+  number    Int
+  nickname  String
+  discordId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Game {
+  id          String      @id @default(uuid())
+  lobby       Lobby       @relation(fields: [lobbyId], references: [id])
+  lobbyId     String      @unique
+  apocalypse  String
+  bunker      String
+  seats       Int
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  players     Player[]
+  events      GameEvent[]
+}
+
+model Player {
+  id        String       @id @default(uuid())
+  game      Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  discordId String?
+  number    Int
+  nickname  String
+  status    PlayerStatus @default(ALIVE)
+  role      PlayerRole   @default(PLAYER)
+  cards     Card[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Card {
+  id        String       @id @default(uuid())
+  player    Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId  String
+  category  CardCategory
+  payload   Json
+  isOpen    Boolean      @default(false)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model GameEvent {
+  id        String   @id @default(uuid())
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  type      String
+  payload   Json
+  createdAt DateTime @default(now())
+}
