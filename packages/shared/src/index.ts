@@ -37,6 +37,8 @@ export interface Card {
   category: CardCategory;
   payload: CardPayload;
   isOpen: boolean;
+  openedAt?: string | null;
+  openedRound?: number | null;
 }
 
 export interface GameEvent {
@@ -78,8 +80,45 @@ export interface Game {
   apocalypse: string;
   bunker: string;
   seats: number;
+  currentRound: number;
   players: Player[];
   createdAt: string;
+}
+
+export type VoteSource = 'WEB' | 'DISCORD';
+
+export interface Vote {
+  id: string;
+  gameId: string;
+  round: number;
+  voterPlayerId: string;
+  targetPlayerId: string | null;
+  source: VoteSource;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface MinuteRequest {
+  id: string;
+  gameId: string;
+  round: number;
+  playerId: string;
+  position: number;
+  approved: boolean;
+  startedAt?: string | null;
+  durationSec?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RevealPlan {
+  id: string;
+  gameId: string;
+  round: number;
+  playerId: string;
+  categories: CardCategory[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CollectPlayersResponse {

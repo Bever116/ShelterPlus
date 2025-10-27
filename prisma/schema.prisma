@@ -69,10 +69,14 @@ model Game {
   apocalypse  String
   bunker      String
   seats       Int
+  currentRound Int        @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   players     Player[]
   events      GameEvent[]
+  votes       Vote[]
+  minuteQueue MinuteRequest[]
+  revealPlans RevealPlan[]
 }
 
 model Player {
@@ -85,6 +89,10 @@ model Player {
   status    PlayerStatus @default(ALIVE)
   role      PlayerRole   @default(PLAYER)
   cards     Card[]
+  votes     Vote[]       @relation("VoteVoter")
+  targetedBy Vote[]      @relation("VoteTarget")
+  minuteRequests MinuteRequest[]
+  revealPlans RevealPlan[]
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 }
@@ -96,6 +104,8 @@ model Card {
   category  CardCategory
   payload   Json
   isOpen    Boolean      @default(false)
+  openedAt  DateTime?
+  openedRound Int?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 }
@@ -107,4 +117,56 @@ model GameEvent {
   type      String
   payload   Json
   createdAt DateTime @default(now())
+}
+
+model Vote {
+  id             String       @id @default(uuid())
+  game           Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId         String
+  round          Int
+  voter          Player       @relation("VoteVoter", fields: [voterPlayerId], references: [id], onDelete: Cascade)
+  voterPlayerId  String
+  target         Player?      @relation("VoteTarget", fields: [targetPlayerId], references: [id], onDelete: SetNull)
+  targetPlayerId String?
+  source         VoteSource
+  updatedAt      DateTime     @updatedAt
+  createdAt      DateTime     @default(now())
+
+  @@unique([gameId, round, voterPlayerId])
+}
+
+enum VoteSource {
+  WEB
+  DISCORD
+}
+
+model MinuteRequest {
+  id          String       @id @default(uuid())
+  game        Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId      String
+  round       Int
+  player      Player       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId    String
+  position    Int
+  approved    Boolean      @default(false)
+  startedAt   DateTime?
+  durationSec Int?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([gameId, round, playerId])
+}
+
+model RevealPlan {
+  id        String   @id @default(uuid())
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  round     Int
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  playerId  String
+  categories Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([gameId, playerId, round])
 }
