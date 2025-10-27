@@ -19,12 +19,23 @@ async function getGame(id: string): Promise<GameWithPlayers> {
   return response.json();
 }
 
+async function getEvents(id: string) {
+  const response = await fetch(`${API_BASE_URL}/games/${id}/events?take=10`, { cache: 'no-store' });
+  if (!response.ok) {
+    return [];
+  }
+  return response.json();
+}
+
 interface GamePageProps {
   params: { id: string };
 }
 
 export default async function GamePage({ params }: GamePageProps) {
-  const game = await getGame(params.id).catch(() => null);
+  const [game, events] = await Promise.all([
+    getGame(params.id).catch(() => null),
+    getEvents(params.id)
+  ]);
 
   if (!game) {
     notFound();
@@ -41,6 +52,14 @@ export default async function GamePage({ params }: GamePageProps) {
           <span className="font-semibold">Bunker:</span> {game.bunker}
         </p>
         <p className="text-slate-500">Seats available: {game.seats}</p>
+        <p className="text-slate-500">Spectators enabled: {game.isSpectatorsEnabled ? 'Yes' : 'No'}</p>
+        {game.ending ? (
+          <div className="mt-4 rounded bg-slate-800 p-4">
+            <h2 className="text-xl font-semibold">Ending</h2>
+            <p className="mt-2 text-slate-200 font-semibold">{(game.ending as any).title}</p>
+            <p className="text-slate-400">{(game.ending as any).description}</p>
+          </div>
+        ) : null}
       </header>
 
       <section>
@@ -62,6 +81,22 @@ export default async function GamePage({ params }: GamePageProps) {
               </ul>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-2xl font-semibold">Recent events</h2>
+        <div className="mt-3 space-y-2 text-sm text-slate-400">
+          {Array.isArray(events) && events.length ? (
+            events.map((event: any) => (
+              <div key={event.id} className="rounded bg-slate-900 p-3">
+                <p className="text-slate-200">{event.type}</p>
+                <p className="text-xs text-slate-500">{new Date(event.createdAt).toLocaleString()}</p>
+              </div>
+            ))
+          ) : (
+            <p>No events logged yet.</p>
+          )}
         </div>
       </section>
     </div>

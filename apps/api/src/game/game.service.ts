@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma, CardCategory, VoteSource, PlayerStatus } from '@prisma/client';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Prisma, CardCategory, VoteSource, PlayerStatus, PlayerRole, GameAdminRole, InviteRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordService } from '../discord/discord.service';
-import { APOCALYPSE_POOL, BUNKER_POOL, CATEGORY_POOLS } from './card-pool';
+import { APOCALYPSE_POOL, BUNKER_POOL, CATEGORY_POOLS, ENDING_POOL } from './card-pool';
 import seedrandom from 'seedrandom';
-import { createHash } from 'crypto';
-import { CARD_CATEGORY_ORDER } from '@shelterplus/shared';
+import { createHash, randomBytes } from 'crypto';
+import { CARD_CATEGORY_ORDER, type GamePublicState } from '@shelterplus/shared';
 import { GameGateway } from './game.gateway';
 
 type LobbyWithPlayers = Prisma.LobbyGetPayload<{
@@ -26,6 +26,76 @@ export class GameService {
     private discord: DiscordService,
     private gateway: GameGateway
   ) {}
+
+  private async recordEvent(gameId: string, type: string, payload: Record<string, unknown>) {
+    const event = await this.prisma.gameEvent.create({
+      data: { gameId, type, payload }
+    });
+
+    this.gateway.emitToGame(gameId, 'events:append', { items: [event] });
+    return event;
+  }
+
+  private async getPublicState(gameId: string): Promise<GamePublicState> {
+    const game = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      include: {
+        players: {
+          orderBy: { number: 'asc' },
+          include: { cards: true }
+        },
+        votes: true
+      }
+    });
+
+    if (!game) {
+      throw new NotFoundException('Game not found');
+    }
+
+    const tallies: Record<string, number> = {};
+    for (const vote of game.votes) {
+      if (!vote.targetPlayerId) continue;
+      tallies[vote.targetPlayerId] = (tallies[vote.targetPlayerId] ?? 0) + 1;
+    }
+
+    return {
+      id: game.id,
+      apocalypse: game.apocalypse,
+      bunker: game.bunker,
+      seats: game.seats,
+      currentRound: game.currentRound,
+      ending: (game.ending as Record<string, unknown> | null) ?? null,
+      players: game.players.map((player) => ({
+        id: player.id,
+        number: player.number,
+        nickname: player.nickname,
+        status: player.status,
+        role: player.role,
+        openedCards: player.cards
+          .filter((card) => card.isOpen)
+          .map((card) => ({
+            category: card.category,
+            payload: card.payload as Record<string, unknown>,
+            openedAt: card.openedAt?.toISOString() ?? null,
+            openedRound: card.openedRound ?? null
+          }))
+      })),
+      votes: tallies,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  private async broadcastPublicState(gameId: string) {
+    try {
+      const state = await this.getPublicState(gameId);
+      this.gateway.emitToGame(gameId, 'spectator:state', { publicState: state });
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return;
+      }
+      throw error;
+    }
+  }
 
   async startFromLobby(lobbyId: string) {
     const lobby = await this.prisma.lobby.findUnique({
@@ -55,6 +125,8 @@ export class GameService {
 
     const dealt = this.dealCards(lobby.players, enabledCategories, rng);
 
+    const hostUserId = lobby.players[0]?.discordId ?? `host-${lobby.id}`;
+
     const createdGame = await this.prisma.$transaction(async (tx) => {
       const game = await tx.game.create({
         data: {
@@ -62,6 +134,7 @@ export class GameService {
           apocalypse,
           bunker,
           seats,
+          isSpectatorsEnabled: true,
           players: {
             create: dealt.map((player) => ({
               number: player.number,
@@ -78,18 +151,11 @@ export class GameService {
               }
             }))
           },
-          events: {
-            create: [
-              {
-                type: 'GAME_STARTED',
-                payload: {
-                  apocalypse,
-                  bunker,
-                  seats,
-                  players: lobby.players.length
-                }
-              }
-            ]
+          admins: {
+            create: {
+              userId: hostUserId,
+              role: GameAdminRole.HOST
+            }
           }
         },
         include: {
@@ -104,7 +170,16 @@ export class GameService {
       };
     });
 
+    await this.recordEvent(createdGame.id, 'GAME_STARTED', {
+      apocalypse,
+      bunker,
+      seats,
+      players: lobby.players.length
+    });
+
     await this.sendDiscordNotifications(createdGame, lobby);
+
+    await this.broadcastPublicState(createdGame.id);
 
     return createdGame;
   }
@@ -144,7 +219,9 @@ export class GameService {
         },
         votes: true,
         minuteQueue: { orderBy: { position: 'asc' } },
-        revealPlans: true
+        revealPlans: true,
+        admins: true,
+        invites: true
       }
     });
 
@@ -164,15 +241,11 @@ export class GameService {
     const updated = await this.prisma.game.update({
       where: { id: gameId },
       data: {
-        currentRound: round,
-        events: {
-          create: {
-            type: 'ROUND_STARTED',
-            payload: { round }
-          }
-        }
+        currentRound: round
       }
     });
+
+    await this.recordEvent(gameId, 'ROUND_STARTED', { round });
 
     if (round === 1) {
       const professionCards = await this.prisma.card.findMany({
@@ -196,37 +269,23 @@ export class GameService {
         this.gateway.emitToGame(gameId, 'char:open', { playerId: card.playerId, category: card.category })
       );
       if (opened.length) {
-        await this.prisma.gameEvent.create({
-          data: {
-            gameId,
-            type: 'ROUND_AUTO_REVEAL',
-            payload: {
-              round,
-              category: 'Profession',
-              players: opened.map((card) => card.playerId)
-            }
-          }
+        await this.recordEvent(gameId, 'ROUND_AUTO_REVEAL', {
+          round,
+          category: 'Profession',
+          players: opened.map((card) => card.playerId)
         });
       }
     }
 
     this.gateway.emitToGame(gameId, 'round:change', { currentRound: updated.currentRound });
+    await this.broadcastPublicState(gameId);
     return updated;
   }
 
   async endRound(gameId: string, round: number) {
     await this.ensureRound(gameId, round);
-    await this.prisma.game.update({
-      where: { id: gameId },
-      data: {
-        events: {
-          create: {
-            type: 'ROUND_ENDED',
-            payload: { round }
-          }
-        }
-      }
-    });
+    await this.recordEvent(gameId, 'ROUND_ENDED', { round });
+    await this.broadcastPublicState(gameId);
 
     return { round };
   }
@@ -254,13 +313,7 @@ export class GameService {
     });
 
     this.gateway.emitToGame(gameId, 'char:preselect', { playerId, categories });
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'REVEAL_PRESELECTED',
-        payload: { playerId, round, categories }
-      }
-    });
+    await this.recordEvent(gameId, 'REVEAL_PRESELECTED', { playerId, round, categories });
     return plan;
   }
 
@@ -286,19 +339,14 @@ export class GameService {
       }
     });
 
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'CARD_OPENED',
-        payload: {
-          playerId,
-          category,
-          round
-        }
-      }
+    await this.recordEvent(gameId, 'CARD_OPENED', {
+      playerId,
+      category,
+      round
     });
 
     this.gateway.emitToGame(gameId, 'char:open', { playerId, category });
+    await this.broadcastPublicState(gameId);
     return updated;
   }
 
@@ -325,14 +373,9 @@ export class GameService {
       }
     });
 
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'MINUTE_ENQUEUED',
-        payload: { playerId, round, position }
-      }
-    });
+    await this.recordEvent(gameId, 'MINUTE_ENQUEUED', { playerId, round, position });
     this.emitMinutes(gameId);
+    await this.broadcastPublicState(gameId);
     return request;
   }
 
@@ -350,14 +393,9 @@ export class GameService {
       data: { approved: true }
     });
 
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'MINUTE_APPROVED',
-        payload: { playerId, round }
-      }
-    });
+    await this.recordEvent(gameId, 'MINUTE_APPROVED', { playerId, round });
     this.emitMinutes(gameId);
+    await this.broadcastPublicState(gameId);
     return updated;
   }
 
@@ -403,40 +441,29 @@ export class GameService {
       }
     });
 
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'MINUTE_TIMER',
-        payload: { action, playerId: minute.playerId, durationSec: storedDuration }
-      }
+    await this.recordEvent(gameId, 'MINUTE_TIMER', {
+      action,
+      playerId: minute.playerId,
+      durationSec: storedDuration
     });
     this.emitMinutes(gameId);
+    await this.broadcastPublicState(gameId);
     return updated;
   }
 
   async startVoting(gameId: string, round: number) {
     await this.ensureRound(gameId, round);
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'VOTING_STARTED',
-        payload: { round }
-      }
-    });
+    await this.recordEvent(gameId, 'VOTING_STARTED', { round });
     await this.gatewayEmitVotes(gameId);
+    await this.broadcastPublicState(gameId);
     return { round };
   }
 
   async stopVoting(gameId: string, round: number) {
     await this.ensureRound(gameId, round);
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'VOTING_STOPPED',
-        payload: { round }
-      }
-    });
+    await this.recordEvent(gameId, 'VOTING_STOPPED', { round });
     await this.gatewayEmitVotes(gameId);
+    await this.broadcastPublicState(gameId);
     return { round };
   }
 
@@ -446,14 +473,9 @@ export class GameService {
       where: { gameId, round },
       data: { targetPlayerId: null }
     });
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'VOTING_REVOTE',
-        payload: { round }
-      }
-    });
+    await this.recordEvent(gameId, 'VOTING_REVOTE', { round });
     await this.gatewayEmitVotes(gameId);
+    await this.broadcastPublicState(gameId);
     return { round };
   }
 
@@ -488,13 +510,8 @@ export class GameService {
     });
 
     await this.gatewayEmitVotes(gameId);
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'VOTE_CAST',
-        payload: { round, voterPlayerId, targetPlayerId, source }
-      }
-    });
+    await this.recordEvent(gameId, 'VOTE_CAST', { round, voterPlayerId, targetPlayerId, source });
+    await this.broadcastPublicState(gameId);
     return vote;
   }
 
@@ -509,17 +526,246 @@ export class GameService {
       data: { status: PlayerStatus.OUT }
     });
 
-    await this.prisma.gameEvent.create({
-      data: {
-        gameId,
-        type: 'PLAYER_KICKED',
-        payload: { playerId }
-      }
-    });
+    await this.recordEvent(gameId, 'PLAYER_KICKED', { playerId });
 
     this.gateway.emitToGame(gameId, 'player:kicked', { playerId });
     await this.gatewayEmitVotes(gameId);
+    await this.broadcastPublicState(gameId);
     return updated;
+  }
+
+  async getPublicGame(gameId: string) {
+    const game = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      select: { isSpectatorsEnabled: true }
+    });
+
+    if (!game) {
+      throw new NotFoundException('Game not found');
+    }
+
+    if (!game.isSpectatorsEnabled) {
+      throw new ForbiddenException('Spectator access disabled');
+    }
+
+    return this.getPublicState(gameId);
+  }
+
+  async createSpectatorInvite(gameId: string) {
+    const game = await this.prisma.game.findUnique({ where: { id: gameId } });
+    if (!game) {
+      throw new NotFoundException('Game not found');
+    }
+    if (!game.isSpectatorsEnabled) {
+      throw new ForbiddenException('Spectators are disabled for this game');
+    }
+    return this.createInvite(gameId, InviteRole.SPECTATOR);
+  }
+
+  async createCoHostInvite(gameId: string) {
+    await this.ensureGameExists(gameId);
+    return this.createInvite(gameId, InviteRole.CO_HOST);
+  }
+
+  async acceptInvite(code: string, userId: string, nickname: string) {
+    const invite = await this.prisma.invite.findUnique({ where: { code } });
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+    if (invite.expiresAt < new Date()) {
+      throw new BadRequestException('Invite expired');
+    }
+
+    const updateData: Prisma.InviteUpdateInput = {};
+    if (!invite.usedByUserId) {
+      updateData.usedByUserId = userId;
+    } else if (invite.usedByUserId !== userId) {
+      throw new BadRequestException('Invite already used');
+    }
+
+    if (Object.keys(updateData).length) {
+      await this.prisma.invite.update({ where: { id: invite.id }, data: updateData });
+    }
+
+    if (invite.role === InviteRole.CO_HOST) {
+      await this.prisma.gameAdmin.upsert({
+        where: {
+          gameId_userId: {
+            gameId: invite.gameId,
+            userId
+          }
+        },
+        create: {
+          gameId: invite.gameId,
+          userId,
+          role: GameAdminRole.CO_HOST
+        },
+        update: {
+          role: GameAdminRole.CO_HOST
+        }
+      });
+      await this.recordEvent(invite.gameId, 'CO_HOST_ADDED', { userId });
+      return { role: InviteRole.CO_HOST };
+    }
+
+    if (invite.role === InviteRole.SPECTATOR) {
+      const game = await this.prisma.game.findUnique({ where: { id: invite.gameId } });
+      if (!game) {
+        throw new NotFoundException('Game not found');
+      }
+      if (!game.isSpectatorsEnabled) {
+        throw new ForbiddenException('Spectators are disabled');
+      }
+
+      let spectator = await this.prisma.player.findFirst({
+        where: { gameId: invite.gameId, discordId: userId, role: PlayerRole.SPECTATOR }
+      });
+
+      if (!spectator) {
+        const spectatorCount = await this.prisma.player.count({
+          where: { gameId: invite.gameId, role: PlayerRole.SPECTATOR }
+        });
+        spectator = await this.prisma.player.create({
+          data: {
+            gameId: invite.gameId,
+            discordId: userId,
+            number: 1000 + spectatorCount + 1,
+            nickname,
+            status: PlayerStatus.OUT,
+            role: PlayerRole.SPECTATOR
+          }
+        });
+        await this.recordEvent(invite.gameId, 'SPECTATOR_JOINED', { playerId: spectator.id });
+      }
+
+      await this.broadcastPublicState(invite.gameId);
+      return { role: InviteRole.SPECTATOR, playerId: spectator.id };
+    }
+
+    throw new BadRequestException('Unsupported invite role');
+  }
+
+  async listEvents(
+    gameId: string,
+    filters: { type?: string; playerId?: string; from?: Date; to?: Date },
+    take = 50,
+    cursor?: string
+  ) {
+    await this.ensureGameExists(gameId);
+    const where: Prisma.GameEventWhereInput = { gameId };
+    if (filters.type) {
+      where.type = filters.type;
+    }
+    const createdAtFilter: Prisma.DateTimeFilter = {};
+    if (filters.from) {
+      createdAtFilter.gte = filters.from;
+    }
+    if (filters.to) {
+      createdAtFilter.lte = filters.to;
+    }
+    if (Object.keys(createdAtFilter).length) {
+      where.createdAt = createdAtFilter;
+    }
+
+    const events = await this.prisma.gameEvent.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor
+        ? {
+            skip: 1,
+            cursor: { id: cursor }
+          }
+        : {})
+    });
+
+    if (filters.playerId) {
+      return events.filter((event) => {
+        const payload = event.payload as Record<string, unknown> | null;
+        return payload?.playerId === filters.playerId;
+      });
+    }
+
+    return events;
+  }
+
+  async exportGame(gameId: string) {
+    const game = await this.prisma.game.findUnique({
+      where: { id: gameId },
+      include: {
+        players: { include: { cards: true } },
+        votes: true,
+        minuteQueue: true,
+        revealPlans: true,
+        events: true
+      }
+    });
+
+    if (!game) {
+      throw new NotFoundException('Game not found');
+    }
+
+    return game;
+  }
+
+  async triggerEnding(gameId: string) {
+    const game = await this.prisma.game.findUnique({ include: { lobby: true }, where: { id: gameId } });
+    if (!game) {
+      throw new NotFoundException('Game not found');
+    }
+
+    if (game.ending) {
+      throw new BadRequestException('Ending already selected');
+    }
+
+    const lobby = await this.prisma.lobby.findUnique({
+      where: { id: game.lobbyId },
+      include: { players: true }
+    });
+
+    if (!lobby) {
+      throw new NotFoundException('Lobby not found');
+    }
+
+    const seed = this.createSeed(lobby);
+    const rng = seedrandom(`${seed}::ending`);
+    const index = Math.floor(rng() * ENDING_POOL.length) % ENDING_POOL.length;
+    const ending = ENDING_POOL[index];
+
+    await this.prisma.game.update({
+      where: { id: gameId },
+      data: {
+        ending: ending as Prisma.InputJsonValue
+      }
+    });
+
+    await this.recordEvent(gameId, 'ENDING_TRIGGERED', ending);
+
+    const channels = lobby.channelsConfig as { textChannelId?: string } | null;
+    if (channels?.textChannelId) {
+      const message = `**Ending**: ${ending.title}\n${ending.description}`;
+      await this.discord.postToChannel(channels.textChannelId, message);
+    }
+
+    this.gateway.emitToGame(gameId, 'ending:show', { ending });
+    await this.broadcastPublicState(gameId);
+    return ending;
+  }
+
+  async getMetrics() {
+    const [activeGames, totalPlayers, minuteRequests, votes] = await Promise.all([
+      this.prisma.game.count({ where: { ending: null } }),
+      this.prisma.player.count({ where: { status: PlayerStatus.ALIVE } }),
+      this.prisma.minuteRequest.count(),
+      this.prisma.vote.count()
+    ]);
+
+    return {
+      activeGames,
+      alivePlayers: totalPlayers,
+      minuteRequests,
+      votes
+    };
   }
 
   private async ensureRound(gameId: string, round: number) {
@@ -574,6 +820,37 @@ export class GameService {
       remainingSec: remaining,
       currentPlayerId: running?.playerId ?? null
     });
+  }
+
+  private generateInviteCode() {
+    return randomBytes(4).toString('hex');
+  }
+
+  private async createInvite(gameId: string, role: InviteRole) {
+    const code = this.generateInviteCode();
+    const invite = await this.prisma.invite.create({
+      data: {
+        gameId,
+        role,
+        code,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000)
+      }
+    });
+
+    await this.recordEvent(gameId, 'INVITE_CREATED', { role, code });
+    return {
+      code,
+      expiresAt: invite.expiresAt,
+      role
+    };
+  }
+
+  private async ensureGameExists(gameId: string) {
+    const game = await this.prisma.game.findUnique({ where: { id: gameId } });
+    if (!game) {
+      throw new NotFoundException('Game not found');
+    }
+    return game;
   }
 
   private createSeed(lobby: LobbyWithPlayers) {

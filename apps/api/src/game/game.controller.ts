@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { GameService } from './game.service';
 import { CardCategory, VoteSource } from '@prisma/client';
 
@@ -19,6 +19,11 @@ export class GameController {
   @Get(':id/state')
   getState(@Param('id') id: string) {
     return this.gameService.getState(id);
+  }
+
+  @Get(':id/public')
+  getPublic(@Param('id') id: string) {
+    return this.gameService.getPublicGame(id);
   }
 
   @Post(':id/round/start')
@@ -118,5 +123,60 @@ export class GameController {
   @Post(':id/kick')
   kick(@Param('id') id: string, @Body() body: { playerId: string }) {
     return this.gameService.kickPlayer(id, body.playerId);
+  }
+
+  @Post(':id/spectators/invite')
+  spectatorInvite(@Param('id') id: string) {
+    const baseUrl = process.env.NEXT_PUBLIC_WEB_URL ?? 'http://localhost:3000';
+    return this.gameService.createSpectatorInvite(id).then((invite) => ({
+      code: invite.code,
+      expiresAt: invite.expiresAt,
+      role: invite.role,
+      url: `${baseUrl}/invite/${invite.code}`
+    }));
+  }
+
+  @Post(':id/cohosts/invite')
+  cohostInvite(@Param('id') id: string) {
+    const baseUrl = process.env.NEXT_PUBLIC_WEB_URL ?? 'http://localhost:3000';
+    return this.gameService.createCoHostInvite(id).then((invite) => ({
+      code: invite.code,
+      expiresAt: invite.expiresAt,
+      role: invite.role,
+      url: `${baseUrl}/invite/${invite.code}`
+    }));
+  }
+
+  @Get(':id/events')
+  listEvents(
+    @Param('id') id: string,
+    @Query('type') type?: string,
+    @Query('playerId') playerId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('take') take = '50',
+    @Query('cursor') cursor?: string
+  ) {
+    return this.gameService.listEvents(
+      id,
+      {
+        type: type ?? undefined,
+        playerId: playerId ?? undefined,
+        from: from ? new Date(from) : undefined,
+        to: to ? new Date(to) : undefined
+      },
+      Number(take),
+      cursor
+    );
+  }
+
+  @Get(':id/export')
+  exportGame(@Param('id') id: string) {
+    return this.gameService.exportGame(id);
+  }
+
+  @Post(':id/ending')
+  ending(@Param('id') id: string) {
+    return this.gameService.triggerEnding(id);
   }
 }

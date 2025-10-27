@@ -70,6 +70,8 @@ model Game {
   bunker      String
   seats       Int
   currentRound Int        @default(0)
+  isSpectatorsEnabled Boolean @default(true)
+  ending      Json?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   players     Player[]
@@ -77,6 +79,8 @@ model Game {
   votes       Vote[]
   minuteQueue MinuteRequest[]
   revealPlans RevealPlan[]
+  admins      GameAdmin[]
+  invites     Invite[]
 }
 
 model Player {
@@ -95,6 +99,22 @@ model Player {
   revealPlans RevealPlan[]
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
+}
+
+model GameAdmin {
+  id        String        @id @default(uuid())
+  game      Game          @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  userId    String
+  role      GameAdminRole
+  createdAt DateTime      @default(now())
+
+  @@unique([gameId, userId])
+}
+
+enum GameAdminRole {
+  HOST
+  CO_HOST
 }
 
 model Card {
@@ -169,4 +189,22 @@ model RevealPlan {
   updatedAt DateTime @updatedAt
 
   @@unique([gameId, playerId, round])
+}
+
+model Invite {
+  id        String     @id @default(uuid())
+  game      Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId    String
+  code      String     @unique
+  role      InviteRole
+  expiresAt DateTime
+  usedByUserId String?
+  createdAt DateTime  @default(now())
+
+  @@index([gameId, role])
+}
+
+enum InviteRole {
+  CO_HOST
+  SPECTATOR
 }

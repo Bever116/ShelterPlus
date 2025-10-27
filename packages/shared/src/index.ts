@@ -81,6 +81,8 @@ export interface Game {
   bunker: string;
   seats: number;
   currentRound: number;
+  isSpectatorsEnabled: boolean;
+  ending?: Record<string, unknown> | null;
   players: Player[];
   createdAt: string;
 }
@@ -118,6 +120,54 @@ export interface RevealPlan {
   playerId: string;
   categories: CardCategory[];
   createdAt: string;
+  updatedAt: string;
+}
+
+export type GameAdminRole = 'HOST' | 'CO_HOST';
+
+export interface GameAdmin {
+  id: string;
+  gameId: string;
+  userId: string;
+  role: GameAdminRole;
+  createdAt: string;
+}
+
+export type InviteRole = 'CO_HOST' | 'SPECTATOR';
+
+export interface Invite {
+  id: string;
+  gameId: string;
+  code: string;
+  role: InviteRole;
+  expiresAt: string;
+  usedByUserId?: string | null;
+  createdAt: string;
+}
+
+export interface PublicPlayerView {
+  id: string;
+  number: number;
+  nickname: string;
+  status: PlayerStatus;
+  role: PlayerRole;
+  openedCards: Array<{
+    category: CardCategory;
+    payload: CardPayload;
+    openedAt?: string | null;
+    openedRound?: number | null;
+  }>;
+}
+
+export interface GamePublicState {
+  id: string;
+  apocalypse: string;
+  bunker: string;
+  seats: number;
+  currentRound: number;
+  ending?: Record<string, unknown> | null;
+  players: PublicPlayerView[];
+  votes: Record<string, number>;
   updatedAt: string;
 }
 

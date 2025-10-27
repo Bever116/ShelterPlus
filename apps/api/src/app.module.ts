@@ -6,6 +6,7 @@ import { LobbyModule } from './lobby/lobby.module';
 import { GameModule } from './game/game.module';
 import { DiscordModule } from './discord/discord.module';
 import { AppConfigModule } from './config/config.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -14,7 +15,8 @@ import { AppConfigModule } from './config/config.module';
     PrismaModule,
     DiscordModule,
     LobbyModule,
-    GameModule
+    GameModule,
+    MetricsModule
   ]
 })
 export class AppModule {}
