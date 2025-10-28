@@ -1,11 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { WebSocketGateway, WebSocketServer, SubscribeMessage, ConnectedSocket, MessageBody } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { corsConfig } from '../config/cors.config';
 
 @WebSocketGateway({
-  cors: {
-    origin: '*'
-  }
+  cors: corsConfig
 })
 export class GameGateway {
   private readonly logger = new Logger(GameGateway.name);

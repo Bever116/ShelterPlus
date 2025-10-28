@@ -3,9 +3,10 @@ import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { AppModule } from './app.module';
+import { corsConfig } from './config/cors.config';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const app = await NestFactory.create(AppModule, { cors: corsConfig });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
