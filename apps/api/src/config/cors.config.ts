@@ -62,6 +62,18 @@ const isAllowedOrigin = (origin?: string | null): boolean => {
   return allowedOriginSet.has(normalizedOrigin);
 };
 
+const logger = new Logger('CorsConfig');
+
+logger.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+
+const isAllowedOrigin = (origin?: string | null): boolean => {
+  if (!origin) {
+    return true;
+  }
+
+  return allowedOrigins.includes(origin);
+};
+
 export const corsConfig: CorsOptions = {
   origin: (origin, callback) => {
     if (!origin) {
