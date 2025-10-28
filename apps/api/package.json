@@ -6,6 +6,7 @@
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
+    "dev": "nest start --watch",
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
