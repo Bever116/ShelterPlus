@@ -72,7 +72,7 @@ export const corsConfig: CorsOptions = {
 
     if (isOriginAllowed(origin)) {
       corsLogger.log(`CORS request from allowed origin: ${origin}`);
-      callback(null, origin);
+      callback(null, true);
       return;
     }
 
