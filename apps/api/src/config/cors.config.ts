@@ -28,8 +28,23 @@ const allowedOrigins = parseOrigins(
   process.env.API_ALLOWED_ORIGINS ?? process.env.NEXT_PUBLIC_WEB_URL
 );
 
+const isAllowedOrigin = (origin?: string | null): boolean => {
+  if (!origin) {
+    return true;
+  }
+
+  return allowedOrigins.includes(origin);
+};
+
 export const corsConfig: CorsOptions = {
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error(`Origin ${origin ?? 'unknown'} not allowed by CORS`), false);
+  },
   credentials: true
 };
 
