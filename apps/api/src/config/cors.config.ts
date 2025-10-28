@@ -49,11 +49,11 @@ const allowedOrigins = parseOrigins(
 );
 const allowedOriginSet = new Set(allowedOrigins);
 
-const logger = new Logger('CorsConfig');
+const corsLogger = new Logger('CorsConfig');
 
-logger.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+corsLogger.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
 
-const isAllowedOrigin = (origin?: string | null): boolean => {
+const isOriginAllowed = (origin?: string | null): boolean => {
   if (!origin) {
     return true;
   }
@@ -62,33 +62,21 @@ const isAllowedOrigin = (origin?: string | null): boolean => {
   return allowedOriginSet.has(normalizedOrigin);
 };
 
-const logger = new Logger('CorsConfig');
-
-logger.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
-
-const isAllowedOrigin = (origin?: string | null): boolean => {
-  if (!origin) {
-    return true;
-  }
-
-  return allowedOrigins.includes(origin);
-};
-
 export const corsConfig: CorsOptions = {
   origin: (origin, callback) => {
     if (!origin) {
-      logger.log('CORS request without origin header accepted.');
+      corsLogger.log('CORS request without origin header accepted.');
       callback(null, true);
       return;
     }
 
-    if (isAllowedOrigin(origin)) {
-      logger.log(`CORS request from allowed origin: ${origin}`);
-      callback(null, true);
+    if (isOriginAllowed(origin)) {
+      corsLogger.log(`CORS request from allowed origin: ${origin}`);
+      callback(null, origin);
       return;
     }
 
-    logger.warn(`CORS request from disallowed origin: ${origin}`);
+    corsLogger.warn(`CORS request from disallowed origin: ${origin}`);
     callback(new Error(`Origin ${origin} not allowed by CORS`), false);
   },
   credentials: true
