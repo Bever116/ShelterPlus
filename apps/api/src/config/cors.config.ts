@@ -2,22 +2,26 @@ import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.int
 
 const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000'];
 
+const sanitizeOrigins = (origins: (string | undefined | null)[]): string[] => {
+  const sanitized = origins
+    .filter((origin): origin is string => typeof origin === 'string')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0 && origin !== '*');
+
+  return sanitized.length > 0 ? sanitized : DEFAULT_ALLOWED_ORIGINS;
+};
+
 const parseOrigins = (rawOrigins?: string | string[]): string[] => {
   if (!rawOrigins) {
     return DEFAULT_ALLOWED_ORIGINS;
   }
 
   if (Array.isArray(rawOrigins)) {
-    const origins = rawOrigins.filter(Boolean);
-    return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
+    return sanitizeOrigins(rawOrigins);
   }
 
-  const origins = rawOrigins
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
-
-  return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
+  const origins = rawOrigins.split(',');
+  return sanitizeOrigins(origins);
 };
 
 const allowedOrigins = parseOrigins(
