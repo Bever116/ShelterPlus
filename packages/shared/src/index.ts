@@ -1,4 +1,4 @@
-import shelterPlusRaw from '../../../Shelter+.json';
+import shelterPlusRaw from './data/shelter-plus.json';
 
 export type PlayerStatus = 'ALIVE' | 'OUT';
 export type PlayerRole = 'PLAYER' | 'SPECTATOR';
