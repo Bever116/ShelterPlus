@@ -67,7 +67,7 @@ To stop the services later, run `docker compose down` (append `-v` to remove vol
 Run Prisma migrations to prepare the Postgres schema:
 
 ```bash
-pnpm prisma migrate dev --schema prisma/schema.prisma
+pnpm --filter @shelterplus/api exec prisma migrate dev --schema prisma/schema.prisma
 ```
 
 This command creates the development database (if needed), applies all migrations, and generates the Prisma client used by the API.

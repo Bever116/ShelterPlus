@@ -5,7 +5,7 @@ import { DiscordService } from '../discord/discord.service';
 import { APOCALYPSE_BUNKER_POOL, CATEGORY_POOLS, ENDING_POOL } from './card-pool';
 import seedrandom from 'seedrandom';
 import { createHash, randomBytes } from 'crypto';
-import { CARD_CATEGORY_ORDER, type GamePublicState } from '@shelterplus/shared';
+import { CARD_CATEGORY_ORDER, type GamePublicState, type CardPayload } from '@shelterplus/shared';
 import { GameGateway } from './game.gateway';
 
 type LobbyWithPlayers = Prisma.LobbyGetPayload<{
@@ -27,13 +27,17 @@ export class GameService {
     private gateway: GameGateway
   ) {}
 
-  private async recordEvent(gameId: string, type: string, payload: Record<string, unknown>) {
+  private async recordEvent(gameId: string, type: string, payload: Prisma.InputJsonValue) {
     const event = await this.prisma.gameEvent.create({
       data: { gameId, type, payload }
     });
 
     this.gateway.emitToGame(gameId, 'events:append', { items: [event] });
     return event;
+  }
+
+  private toJson<T>(value: T): Prisma.InputJsonValue {
+    return value as unknown as Prisma.InputJsonValue;
   }
 
   private async getPublicState(gameId: string): Promise<GamePublicState> {
@@ -75,7 +79,7 @@ export class GameService {
           .filter((card) => card.isOpen)
           .map((card) => ({
             category: card.category,
-            payload: card.payload as Record<string, unknown>,
+            payload: card.payload as unknown as CardPayload,
             openedAt: card.openedAt?.toISOString() ?? null,
             openedRound: card.openedRound ?? null
           }))
@@ -169,12 +173,12 @@ export class GameService {
       };
     });
 
-    await this.recordEvent(createdGame.id, 'GAME_STARTED', {
+    await this.recordEvent(createdGame.id, 'GAME_STARTED', this.toJson({
       apocalypse,
       bunker,
       seats,
       players: lobby.players.length
-    });
+    }));
 
     await this.sendDiscordNotifications(createdGame, lobby);
 
@@ -190,7 +194,8 @@ export class GameService {
         players: {
           orderBy: { number: 'asc' },
           include: { cards: true }
-        }
+        },
+        revealPlans: true
       }
     });
 
@@ -244,7 +249,7 @@ export class GameService {
       }
     });
 
-    await this.recordEvent(gameId, 'ROUND_STARTED', { round });
+    await this.recordEvent(gameId, 'ROUND_STARTED', this.toJson({ round }));
 
     if (round === 1) {
       const professionCards = await this.prisma.card.findMany({
@@ -268,11 +273,15 @@ export class GameService {
         this.gateway.emitToGame(gameId, 'char:open', { playerId: card.playerId, category: card.category })
       );
       if (opened.length) {
-        await this.recordEvent(gameId, 'ROUND_AUTO_REVEAL', {
-          round,
-          category: 'Profession',
-          players: opened.map((card) => card.playerId)
-        });
+        await this.recordEvent(
+          gameId,
+          'ROUND_AUTO_REVEAL',
+          this.toJson({
+            round,
+            category: 'Profession',
+            players: opened.map((card) => card.playerId)
+          })
+        );
       }
     }
 
@@ -283,7 +292,7 @@ export class GameService {
 
   async endRound(gameId: string, round: number) {
     await this.ensureRound(gameId, round);
-    await this.recordEvent(gameId, 'ROUND_ENDED', { round });
+    await this.recordEvent(gameId, 'ROUND_ENDED', this.toJson({ round }));
     await this.broadcastPublicState(gameId);
 
     return { round };
@@ -312,7 +321,7 @@ export class GameService {
     });
 
     this.gateway.emitToGame(gameId, 'char:preselect', { playerId, categories });
-    await this.recordEvent(gameId, 'REVEAL_PRESELECTED', { playerId, round, categories });
+    await this.recordEvent(gameId, 'REVEAL_PRESELECTED', this.toJson({ playerId, round, categories }));
     return plan;
   }
 
@@ -338,11 +347,11 @@ export class GameService {
       }
     });
 
-    await this.recordEvent(gameId, 'CARD_OPENED', {
+    await this.recordEvent(gameId, 'CARD_OPENED', this.toJson({
       playerId,
       category,
       round
-    });
+    }));
 
     this.gateway.emitToGame(gameId, 'char:open', { playerId, category });
     await this.broadcastPublicState(gameId);
@@ -372,7 +381,7 @@ export class GameService {
       }
     });
 
-    await this.recordEvent(gameId, 'MINUTE_ENQUEUED', { playerId, round, position });
+    await this.recordEvent(gameId, 'MINUTE_ENQUEUED', this.toJson({ playerId, round, position }));
     this.emitMinutes(gameId);
     await this.broadcastPublicState(gameId);
     return request;
@@ -392,7 +401,7 @@ export class GameService {
       data: { approved: true }
     });
 
-    await this.recordEvent(gameId, 'MINUTE_APPROVED', { playerId, round });
+    await this.recordEvent(gameId, 'MINUTE_APPROVED', this.toJson({ playerId, round }));
     this.emitMinutes(gameId);
     await this.broadcastPublicState(gameId);
     return updated;
@@ -440,11 +449,15 @@ export class GameService {
       }
     });
 
-    await this.recordEvent(gameId, 'MINUTE_TIMER', {
-      action,
-      playerId: minute.playerId,
-      durationSec: storedDuration
-    });
+    await this.recordEvent(
+      gameId,
+      'MINUTE_TIMER',
+      this.toJson({
+        action,
+        playerId: minute.playerId,
+        durationSec: storedDuration
+      })
+    );
     this.emitMinutes(gameId);
     await this.broadcastPublicState(gameId);
     return updated;
@@ -452,7 +465,7 @@ export class GameService {
 
   async startVoting(gameId: string, round: number) {
     await this.ensureRound(gameId, round);
-    await this.recordEvent(gameId, 'VOTING_STARTED', { round });
+    await this.recordEvent(gameId, 'VOTING_STARTED', this.toJson({ round }));
     await this.gatewayEmitVotes(gameId);
     await this.broadcastPublicState(gameId);
     return { round };
@@ -460,7 +473,7 @@ export class GameService {
 
   async stopVoting(gameId: string, round: number) {
     await this.ensureRound(gameId, round);
-    await this.recordEvent(gameId, 'VOTING_STOPPED', { round });
+    await this.recordEvent(gameId, 'VOTING_STOPPED', this.toJson({ round }));
     await this.gatewayEmitVotes(gameId);
     await this.broadcastPublicState(gameId);
     return { round };
@@ -472,7 +485,7 @@ export class GameService {
       where: { gameId, round },
       data: { targetPlayerId: null }
     });
-    await this.recordEvent(gameId, 'VOTING_REVOTE', { round });
+    await this.recordEvent(gameId, 'VOTING_REVOTE', this.toJson({ round }));
     await this.gatewayEmitVotes(gameId);
     await this.broadcastPublicState(gameId);
     return { round };
@@ -509,7 +522,7 @@ export class GameService {
     });
 
     await this.gatewayEmitVotes(gameId);
-    await this.recordEvent(gameId, 'VOTE_CAST', { round, voterPlayerId, targetPlayerId, source });
+    await this.recordEvent(gameId, 'VOTE_CAST', this.toJson({ round, voterPlayerId, targetPlayerId, source }));
     await this.broadcastPublicState(gameId);
     return vote;
   }
@@ -525,7 +538,7 @@ export class GameService {
       data: { status: PlayerStatus.OUT }
     });
 
-    await this.recordEvent(gameId, 'PLAYER_KICKED', { playerId });
+    await this.recordEvent(gameId, 'PLAYER_KICKED', this.toJson({ playerId }));
 
     this.gateway.emitToGame(gameId, 'player:kicked', { playerId });
     await this.gatewayEmitVotes(gameId);
@@ -603,7 +616,7 @@ export class GameService {
           role: GameAdminRole.CO_HOST
         }
       });
-      await this.recordEvent(invite.gameId, 'CO_HOST_ADDED', { userId });
+      await this.recordEvent(invite.gameId, 'CO_HOST_ADDED', this.toJson({ userId }));
       return { role: InviteRole.CO_HOST };
     }
 
@@ -634,7 +647,7 @@ export class GameService {
             role: PlayerRole.SPECTATOR
           }
         });
-        await this.recordEvent(invite.gameId, 'SPECTATOR_JOINED', { playerId: spectator.id });
+        await this.recordEvent(invite.gameId, 'SPECTATOR_JOINED', this.toJson({ playerId: spectator.id }));
       }
 
       await this.broadcastPublicState(invite.gameId);
@@ -734,11 +747,11 @@ export class GameService {
     await this.prisma.game.update({
       where: { id: gameId },
       data: {
-        ending: ending as Prisma.InputJsonValue
+        ending: this.toJson(ending)
       }
     });
 
-    await this.recordEvent(gameId, 'ENDING_TRIGGERED', ending);
+    await this.recordEvent(gameId, 'ENDING_TRIGGERED', this.toJson(ending));
 
     const channels = lobby.channelsConfig as { textChannelId?: string } | null;
     if (channels?.textChannelId) {
@@ -753,7 +766,7 @@ export class GameService {
 
   async getMetrics() {
     const [activeGames, totalPlayers, minuteRequests, votes] = await Promise.all([
-      this.prisma.game.count({ where: { ending: null } }),
+      this.prisma.game.count({ where: { ending: { equals: Prisma.JsonNull } } }),
       this.prisma.player.count({ where: { status: PlayerStatus.ALIVE } }),
       this.prisma.minuteRequest.count(),
       this.prisma.vote.count()
@@ -836,7 +849,7 @@ export class GameService {
       }
     });
 
-    await this.recordEvent(gameId, 'INVITE_CREATED', { role, code });
+    await this.recordEvent(gameId, 'INVITE_CREATED', this.toJson({ role, code }));
     return {
       code,
       expiresAt: invite.expiresAt,
@@ -865,12 +878,12 @@ export class GameService {
     return createHash('sha256').update(seedString).digest('hex');
   }
 
-  private pickItem<T>(pool: T[], rng: seedrandom.prng): T {
+  private pickItem<T>(pool: T[], rng: seedrandom.PRNG): T {
     const index = Math.floor(rng() * pool.length);
     return pool[index % pool.length];
   }
 
-  private dealCards(players: LobbyPlayer[], enabled: Record<CardCategory, boolean>, rng: seedrandom.prng) {
+  private dealCards(players: LobbyPlayer[], enabled: Record<CardCategory, boolean>, rng: seedrandom.PRNG) {
     const categoryPools: Record<CardCategory, string[]> = {} as Record<CardCategory, string[]>;
     const usedValues: Record<CardCategory, Set<string>> = {} as Record<CardCategory, Set<string>>;
     const fallbackCounters: Record<CardCategory, number> = {} as Record<CardCategory, number>;
