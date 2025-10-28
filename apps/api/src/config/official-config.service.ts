@@ -32,6 +32,7 @@ export class OfficialConfigService {
       return this.cached;
     } catch (error) {
       this.logger.error('Failed to parse OFFICIAL_CONFIG_JSON', error as Error);
+      this.logParsingHint(raw, error as Error);
       this.cached = [];
       return this.cached;
     }
@@ -40,5 +41,31 @@ export class OfficialConfigService {
   getByIndex(index: number): OfficialConfig | null {
     const configs = this.getAll();
     return configs[index] ?? null;
+  }
+
+  private logParsingHint(raw: string, error: Error) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      this.logger.warn('OFFICIAL_CONFIG_JSON is empty after trimming whitespace.');
+      return;
+    }
+
+    const preview = trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed;
+    this.logger.warn(`OFFICIAL_CONFIG_JSON value preview: ${preview}`);
+
+    if (/Expected property name or '\}' in JSON/.test(error.message)) {
+      const looksUnquotedKey = /[{,]\s*[A-Za-z0-9_]+\s*:/.test(trimmed);
+      if (looksUnquotedKey) {
+        this.logger.warn(
+          'It looks like some keys are missing double quotes. Example of the correct format: {"guildId": "123"}.'
+        );
+      }
+    }
+
+    if (/Unexpected token '\\'/.test(error.message)) {
+      this.logger.warn(
+        'Found unexpected backslashes. If you are using a .env file, drop the escaping and keep just the plain JSON.'
+      );
+    }
   }
 }

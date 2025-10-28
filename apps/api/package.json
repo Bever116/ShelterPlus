@@ -8,7 +8,8 @@
     "start": "pnpm run prisma:generate && nest start",
     "start:dev": "pnpm run prisma:generate && nest start --watch",
     "dev": "pnpm run start:dev",
-    "lint": "eslint \"src/**/*.{ts,tsx}\""
+    "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "diagnose:official-config": "node scripts/diagnose-official-config.cjs"
   },
   "dependencies": {
     "@nestjs/common": "10.3.2",
@@ -32,6 +33,7 @@
     "uuid": "9.0.1",
     "seedrandom": "3.0.5",
     "discord.js": "14.14.1",
+    "dotenv": "16.4.5",
     "@nestjs/websockets": "10.3.2",
     "@nestjs/platform-socket.io": "10.3.2",
     "socket.io": "4.7.5",
