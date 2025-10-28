@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "nest build",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "dev": "nest start --watch",
+    "build": "pnpm run prisma:generate && nest build",
+    "prisma:generate": "cross-env PRISMA_GENERATE_SKIP_AUTOINSTALL=1 prisma generate",
+    "start": "pnpm run prisma:generate && nest start",
+    "start:dev": "pnpm run prisma:generate && nest start --watch",
+    "dev": "pnpm run start:dev",
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
@@ -40,6 +41,7 @@
     "@nestjs/cli": "10.2.1",
     "@nestjs/schematics": "10.1.0",
     "@nestjs/testing": "10.3.2",
+    "cross-env": "7.0.3",
     "@types/seedrandom": "3.0.4",
     "@types/cookie-parser": "1.4.6",
     "@types/express-session": "1.17.9",
