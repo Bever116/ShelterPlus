@@ -7,17 +7,27 @@ const parseOrigins = (rawOrigins?: string | string[]): string[] => {
     return DEFAULT_ALLOWED_ORIGINS;
   }
 
-  if (Array.isArray(rawOrigins)) {
-    const origins = rawOrigins.filter(Boolean);
-    return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
+  const origins = Array.isArray(rawOrigins) ? rawOrigins : rawOrigins.split(',');
+
+  const sanitized = origins
+    .map((origin) => origin?.trim())
+    .filter((origin): origin is string => {
+      if (!origin) {
+        return false;
+      }
+
+      if (origin === '*') {
+        throw new Error('API_ALLOWED_ORIGINS and NEXT_PUBLIC_WEB_URL cannot contain "*".');
+      }
+
+      return true;
+    });
+
+  if (sanitized.length === 0) {
+    return DEFAULT_ALLOWED_ORIGINS;
   }
 
-  const origins = rawOrigins
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter((origin) => origin.length > 0);
-
-  return origins.length > 0 ? origins : DEFAULT_ALLOWED_ORIGINS;
+  return Array.from(new Set(sanitized));
 };
 
 const allowedOrigins = parseOrigins(
@@ -25,7 +35,15 @@ const allowedOrigins = parseOrigins(
 );
 
 export const corsConfig: CorsOptions = {
-  origin: allowedOrigins,
-  credentials: true
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-Requested-With'
+  ],
+  optionsSuccessStatus: 204
 };
 

@@ -30,6 +30,25 @@ Set the following environment variables for local development:
 
 The API exposes lobby and game endpoints that orchestrate deterministic card dealing. The web UI lets hosts create lobbies, gather players, and start games. Discord interactions fall back to offline logging when the bot token is not configured.
 
+## Local HTTPS for the API
+
+The NestJS API serves traffic over HTTPS on port `3333` when local certificates are available. Generate and trust development certificates with [`mkcert`](https://github.com/FiloSottile/mkcert):
+
+```bash
+cd apps/api
+mkdir -p certs
+mkcert -install
+mkcert -key-file certs/key.pem -cert-file certs/cert.pem localhost
+```
+
+The browser must trust the generated certificate; otherwise, cross-origin requests will fail during the TLS handshake. After the certificate is trusted, point your frontend requests to `https://localhost:3333`. For example:
+
+```ts
+axios.get('https://localhost:3333/config/official', { withCredentials: true });
+```
+
+The API continues to accept requests from `http://localhost:3000` and falls back to HTTP automatically if the certificate files are missing.
+
 ### Пример `OFFICIAL_CONFIG_JSON`
 
 Если в журнале появляется ошибка `Failed to parse OFFICIAL_CONFIG_JSON`, убедитесь, что значение переменной окружения содержит корректный JSON. Чаще всего сообщение `SyntaxError: Expected property name or '}' in JSON` означает, что ключи (`guildId`, `voiceChannelId` и т. д.) указаны без кавычек. Ниже приведён корректный пример и распространённая ошибка для сравнения.
