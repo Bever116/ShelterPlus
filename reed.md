@@ -41,7 +41,8 @@ Create environment files before running the services. You can keep all variables
 | `DISCORD_CLIENT_SECRET` | Web | Discord OAuth client secret. Provide a placeholder if Discord auth is not configured. |
 | `DISCORD_BOT_TOKEN` | API | Enables Discord bot integration. Leave unset to run the API in offline mode (Discord features disabled). |
 | `OFFICIAL_CONFIG_JSON` | API | JSON blob for the official game configuration. Defaults to the value exported from `@shelterplus/shared` when unset. |
-| `NEXT_PUBLIC_API_URL` | Web | Base URL the web app uses to contact the API. Defaults to `http://localhost:3333`. |
+| `API_ALLOWED_ORIGINS` | API | Comma-separated list of browser origins allowed to talk to the API. |
+| `NEXT_PUBLIC_API_URL` | Web | Origin of the API (for example `https://localhost:3333`). Keep it in sync with the API server. |
 | `SESSION_SECRET` | API | Secret for Express session cookies. Defaults to `development-secret`; override in production. |
 
 ### Optional variables
@@ -82,7 +83,7 @@ Start the API in watch mode:
 pnpm --filter @shelterplus/api start:dev
 ```
 
-The API listens on `http://localhost:3333` by default. Use the `PORT` environment variable to override the port if necessary. The console will log `API running on http://localhost:<port>` once the service is ready.
+The API logs its fully qualified base URL after startup (for example `http://localhost:3333` or `https://localhost:3333`). Override the port with `PORT` and enable HTTPS with `API_ENABLE_HTTPS=true`. The log line `API running on ...` reflects the exact origin that clients should use.
 
 For a production build:
 
@@ -99,7 +100,7 @@ Start the frontend in development mode:
 pnpm --filter @shelterplus/web dev
 ```
 
-The app is available at `http://localhost:3000`. It communicates with the API using `NEXT_PUBLIC_API_URL`.
+The app is available at `http://localhost:3000` in development. Ensure `NEXT_PUBLIC_API_URL` matches the API origin printed in the server logs; this keeps share links and redirects on the correct host and protocol.
 
 For a production build:
 

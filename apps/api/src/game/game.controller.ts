@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { GameService } from './game.service';
+import type { Request } from 'express';
 import { CardCategory, VoteSource } from '@prisma/client';
+import { buildAbsoluteUrl } from '../common/utils/request-origin';
 
 @Controller('games')
 export class GameController {
@@ -126,24 +128,22 @@ export class GameController {
   }
 
   @Post(':id/spectators/invite')
-  spectatorInvite(@Param('id') id: string) {
-    const baseUrl = process.env.NEXT_PUBLIC_WEB_URL ?? 'http://localhost:3000';
+  spectatorInvite(@Param('id') id: string, @Req() req: Request) {
     return this.gameService.createSpectatorInvite(id).then((invite) => ({
       code: invite.code,
       expiresAt: invite.expiresAt,
       role: invite.role,
-      url: `${baseUrl}/invite/${invite.code}`
+      url: buildAbsoluteUrl(req, `/invite/${invite.code}`)
     }));
   }
 
   @Post(':id/cohosts/invite')
-  cohostInvite(@Param('id') id: string) {
-    const baseUrl = process.env.NEXT_PUBLIC_WEB_URL ?? 'http://localhost:3000';
+  cohostInvite(@Param('id') id: string, @Req() req: Request) {
     return this.gameService.createCoHostInvite(id).then((invite) => ({
       code: invite.code,
       expiresAt: invite.expiresAt,
       role: invite.role,
-      url: `${baseUrl}/invite/${invite.code}`
+      url: buildAbsoluteUrl(req, `/invite/${invite.code}`)
     }));
   }
 

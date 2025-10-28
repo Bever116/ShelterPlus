@@ -1,109 +1,133 @@
-import { readFileSync, existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
-import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
 import { corsConfig } from './config/cors.config';
-// !!! TEMP DEBUG !!!
-console.log('BOOT_ID=DEV-HTTPS-CORS-777 __filename=', __filename, '__dirname=', __dirname, 'CWD=', process.cwd());
+
+const logger = new Logger('Bootstrap');
+
+const toBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return ['true', '1', 'yes', 'on'].includes(normalized);
+};
+
+const parseTrustProxy = (): boolean | number | string => {
+  const raw = process.env.API_TRUST_PROXY ?? process.env.TRUST_PROXY;
+  if (raw === undefined) {
+    return true;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+
+  const numeric = Number(raw);
+  if (!Number.isNaN(numeric)) {
+    return numeric;
+  }
+
+  return raw;
+};
+
+const resolveHttpsOptions = () => {
+  const httpsRequested = toBoolean(process.env.API_ENABLE_HTTPS ?? process.env.USE_HTTPS, false);
+  if (!httpsRequested) {
+    return { httpsOptions: undefined, httpsEnabled: false } as const;
+  }
+
+  const candidates: Array<{ key: string; cert: string }> = [];
+  const envKey = process.env.API_HTTPS_KEY_PATH ?? process.env.HTTPS_KEY_PATH;
+  const envCert = process.env.API_HTTPS_CERT_PATH ?? process.env.HTTPS_CERT_PATH;
+
+  if (envKey && envCert) {
+    candidates.push({ key: resolve(envKey), cert: resolve(envCert) });
+  }
+
+  const defaultDirectories = [
+    resolve(process.cwd(), 'apps/api/certs'),
+    resolve(process.cwd(), 'certs')
+  ];
+
+  for (const dir of defaultDirectories) {
+    candidates.push({ key: join(dir, 'key.pem'), cert: join(dir, 'cert.pem') });
+  }
+
+  for (const { key, cert } of candidates) {
+    if (existsSync(key) && existsSync(cert)) {
+      logger.log(`Enabling HTTPS with certificates from ${resolve(cert)}`);
+      return {
+        httpsOptions: {
+          key: readFileSync(key),
+          cert: readFileSync(cert)
+        },
+        httpsEnabled: true
+      } as const;
+    }
+  }
+
+  logger.warn('API_ENABLE_HTTPS is true but no certificate pair was found; continuing with HTTP.');
+  return { httpsOptions: undefined, httpsEnabled: false } as const;
+};
 
 async function bootstrap() {
-    // --- HTTPS: ищем key.pem / cert.pem в нескольких типичных местах ---
-    const candidates = [
-        join(__dirname, '../certs'),
-        join(__dirname, '../../certs'),
-        resolve(process.cwd(), 'apps/api/certs'),
-        resolve(process.cwd(), 'certs'),
-    ];
+  const { httpsOptions, httpsEnabled } = resolveHttpsOptions();
 
-    let httpsOptions: { key: Buffer; cert: Buffer } | undefined;
+  const app = await NestFactory.create(AppModule, httpsOptions ? { httpsOptions } : undefined);
 
-    for (const dir of candidates) {
-        const keyPath = join(dir, 'key.pem');
-        const certPath = join(dir, 'cert.pem');
-        Logger.warn(`Looking for HTTPS certs: ${keyPath} | ${certPath}`);
+  const httpAdapter = app.getHttpAdapter();
+  const instance = httpAdapter.getInstance?.();
+  if (instance && typeof instance.set === 'function') {
+    instance.set('trust proxy', parseTrustProxy());
+  }
 
-        if (existsSync(keyPath) && existsSync(certPath)) {
-            Logger.log(`Found HTTPS certs in: ${dir}`);
-            httpsOptions = {
-                key: readFileSync(keyPath),
-                cert: readFileSync(certPath),
-            };
-            break;
-        }
-    }
+  app.enableCors(corsConfig);
 
-    if (!httpsOptions) {
-        Logger.warn('HTTPS certificates not found; falling back to HTTP.');
-    }
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true }
+    })
+  );
 
-    const app = await NestFactory.create(AppModule, httpsOptions ? { httpsOptions } : undefined);
+  const sessionSecret = process.env.SESSION_SECRET ?? 'development-secret';
+  const secureCookies = toBoolean(process.env.SESSION_COOKIE_SECURE, httpsEnabled);
+  const sameSite = secureCookies ? 'none' : 'lax';
 
-    // --- Вариант A: включаем CORS по конфигу (origin без '*', credentials: true и т.д.) ---
-    app.enableCors(corsConfig);
+  app.use(cookieParser());
+  app.use(
+    session({
+      secret: sessionSecret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite,
+        secure: secureCookies
+      }
+    })
+  );
 
-    // --- Жёсткий мидлвар: перебиваем любые '*' и корректно отвечаем на preflight ---
-    const ALLOWED_ORIGIN = 'http://localhost:3000';
-    app.use((req: Request, res: Response, next: NextFunction) => {
-        const origin = req.headers.origin as string | undefined;
-
-        if (origin === ALLOWED_ORIGIN) {
-            res.setHeader('Access-Control-Allow-Origin', origin);
-            res.setHeader('Access-Control-Allow-Credentials', 'true');
-            res.setHeader('Vary', 'Origin');
-            res.setHeader(
-                'Access-Control-Allow-Methods',
-                'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS',
-            );
-            res.setHeader(
-                'Access-Control-Allow-Headers',
-                'Content-Type, Authorization, Accept, X-Requested-With',
-            );
-        }
-
-        if (req.method === 'OPTIONS') {
-            return res.status(204).end();
-        }
-
-        next();
-    });
-
-    // --- Валидация ---
-    app.useGlobalPipes(
-        new ValidationPipe({
-            whitelist: true,
-            transform: true,
-            transformOptions: { enableImplicitConversion: true },
-        }),
-    );
-
-    // --- Cookie + Session (cross-site cookies требуют HTTPS и SameSite=None) ---
-    const sessionSecret = process.env.SESSION_SECRET ?? 'development-secret';
-    app.use(cookieParser());
-    app.use(
-        session({
-            secret: sessionSecret,
-            resave: false,
-            saveUninitialized: false,
-            cookie: {
-                httpOnly: true,
-                sameSite: 'none',
-                secure: true, // обязателен при SameSite=None (нужен HTTPS)
-            },
-        }),
-    );
-
-    // --- Start ---
-    const port = process.env.PORT ? Number(process.env.PORT) : 3333;
-    await app.listen(port);
-    Logger.log(`API running on ${httpsOptions ? 'https' : 'http'}://localhost:${port}`);
+  const port = Number.parseInt(process.env.PORT ?? '3333', 10);
+  const host = process.env.HOST ?? '0.0.0.0';
+  await app.listen(port, host);
+  const url = await app.getUrl();
+  Logger.log(`API running on ${url}`);
 }
 
 bootstrap().catch((err) => {
-    // eslint-disable-next-line no-console
-    console.error(err);
-    process.exit(1);
+  logger.error('Failed to bootstrap Nest application', err);
+  process.exit(1);
 });

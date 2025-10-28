@@ -3,8 +3,7 @@ import Link from 'next/link';
 import type { Lobby } from '@shelterplus/shared';
 import { LobbyPlayersTable } from '../../../components/lobby-players-table';
 import { LobbyActions } from '../../../components/lobby-actions';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3333';
+import { API_BASE_URL } from '../../../lib/api-config';
 
 interface LobbyPlayer {
   id: string;
