@@ -36,12 +36,17 @@ const parseOrigins = (rawOrigins?: string | string[]): string[] => {
     return DEFAULT_ALLOWED_ORIGINS.map((origin) => normalizeOrigin(origin));
   }
 
-  if (Array.isArray(rawOrigins)) {
-    return sanitizeOrigins(rawOrigins);
+  const origins = Array.isArray(rawOrigins) ? rawOrigins : rawOrigins.split(',');
+
+  const sanitized = origins
+    .map((origin) => origin?.trim())
+    .filter((origin): origin is string => Boolean(origin) && origin !== '*');
+
+  if (sanitized.length === 0) {
+    return DEFAULT_ALLOWED_ORIGINS;
   }
 
-  const origins = rawOrigins.split(',');
-  return sanitizeOrigins(origins);
+  return Array.from(new Set(sanitized));
 };
 
 const allowedOrigins = parseOrigins(
@@ -63,22 +68,15 @@ const isOriginAllowed = (origin?: string | null): boolean => {
 };
 
 export const corsConfig: CorsOptions = {
-  origin: (origin, callback) => {
-    if (!origin) {
-      corsLogger.log('CORS request without origin header accepted.');
-      callback(null, true);
-      return;
-    }
-
-    if (isOriginAllowed(origin)) {
-      corsLogger.log(`CORS request from allowed origin: ${origin}`);
-      callback(null, true);
-      return;
-    }
-
-    corsLogger.warn(`CORS request from disallowed origin: ${origin}`);
-    callback(new Error(`Origin ${origin} not allowed by CORS`), false);
-  },
-  credentials: true
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-Requested-With'
+  ],
+  optionsSuccessStatus: 204
 };
 
