@@ -3,6 +3,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
+      "@shelterplus/shared": [
+        "../../packages/shared/src"
+      ],
       "@shelterplus/shared/*": [
         "../../packages/shared/src/*"
       ]
