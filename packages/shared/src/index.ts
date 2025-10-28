@@ -1,4 +1,4 @@
-import shelterPlusRaw from './data/shelter-plus.json';
+import shelterPlusRaw from './data/shelter-plus.json' assert { type: 'json' };
 
 export type PlayerStatus = 'ALIVE' | 'OUT';
 export type PlayerRole = 'PLAYER' | 'SPECTATOR';

@@ -14,7 +14,10 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@shelterplus/shared": ["packages/shared/src"],
+      "@shelterplus/shared": [
+        "packages/shared/dist/index",
+        "packages/shared/src/index"
+      ],
       "@shelterplus/shared/*": ["packages/shared/src/*"],
       "@prisma/client": ["apps/api/node_modules/.prisma/client/index.d.ts"],
       "@prisma/client/*": ["apps/api/node_modules/.prisma/client/*"]
