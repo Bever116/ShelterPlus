@@ -18,7 +18,7 @@ pnpm --filter @shelterplus/api dev
 pnpm --filter @shelterplus/web dev
 ```
 
-Set the following environment variables for local development:
+Set the following environment variables for local development (copy `.env.example` as a starting point):
 
 - `DATABASE_URL`
 - `NEXTAUTH_SECRET`
@@ -26,13 +26,17 @@ Set the following environment variables for local development:
 - `DISCORD_CLIENT_SECRET`
 - `DISCORD_BOT_TOKEN`
 - `OFFICIAL_CONFIG_JSON`
-- `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:3333`)
+- `API_ALLOWED_ORIGINS` (comma-separated list of browser origins allowed to call the API)
+- `NEXT_PUBLIC_WEB_URL` (the public origin of the web app; used for redirects and link building)
+- `NEXT_PUBLIC_API_URL` (the origin exposed by the API itself)
+- `API_ENABLE_HTTPS` (set to `true` to enable local HTTPS when certificates are available)
+- `API_HTTPS_CERT_PATH` and `API_HTTPS_KEY_PATH` (paths to the TLS certificate/key when HTTPS is enabled)
 
 The API exposes lobby and game endpoints that orchestrate deterministic card dealing. The web UI lets hosts create lobbies, gather players, and start games. Discord interactions fall back to offline logging when the bot token is not configured.
 
 ## Local HTTPS for the API
 
-The NestJS API serves traffic over HTTPS on port `3333` when local certificates are available. Generate and trust development certificates with [`mkcert`](https://github.com/FiloSottile/mkcert):
+The NestJS API serves HTTP by default. Enable HTTPS in development by setting `API_ENABLE_HTTPS=true` and pointing `API_HTTPS_CERT_PATH` / `API_HTTPS_KEY_PATH` at a certificate pair. A convenient way to create trusted certificates is [`mkcert`](https://github.com/FiloSottile/mkcert):
 
 ```bash
 cd apps/api
@@ -41,13 +45,21 @@ mkcert -install
 mkcert -key-file certs/key.pem -cert-file certs/cert.pem localhost
 ```
 
-The browser must trust the generated certificate; otherwise, cross-origin requests will fail during the TLS handshake. After the certificate is trusted, point your frontend requests to `https://localhost:3333`. For example:
+After generating the certificates, set:
 
-```ts
-axios.get('https://localhost:3333/config/official', { withCredentials: true });
+```env
+API_ENABLE_HTTPS=true
+API_HTTPS_CERT_PATH=apps/api/certs/cert.pem
+API_HTTPS_KEY_PATH=apps/api/certs/key.pem
+NEXT_PUBLIC_API_URL=https://localhost:3333
 ```
 
-The API continues to accept requests from `http://localhost:3000` and falls back to HTTP automatically if the certificate files are missing.
+The API trusts the `X-Forwarded-Proto` and `Host` headers when `API_TRUST_PROXY` (or `TRUST_PROXY`) is left at its default value of `true`, so reverse proxies can terminate TLS while the API still builds correct absolute URLs. If the specified certificate files are missing, the server logs a warning and starts in HTTP mode instead of crashing.
+
+### Verifying origin handling
+
+- Automated: `pnpm --filter @shelterplus/api test:origin` ensures the request-origin helper builds absolute URLs correctly.
+- Manual: start the API and web app, create a lobby, and verify that the invite/share links use the same origin that served the page. Repeat the check with `API_ENABLE_HTTPS=true` to confirm redirects switch to `https://` automatically.
 
 ### Пример `OFFICIAL_CONFIG_JSON`
 
