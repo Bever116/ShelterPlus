@@ -8,12 +8,16 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "allowSyntheticDefaultImports": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "strict": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
       "@shelterplus/shared": ["packages/shared/src"],
-      "@shelterplus/shared/*": ["packages/shared/src/*"]
+      "@shelterplus/shared/*": ["packages/shared/src/*"],
+      "@prisma/client": ["apps/api/node_modules/.prisma/client/index.d.ts"],
+      "@prisma/client/*": ["apps/api/node_modules/.prisma/client/*"]
     }
   },
   "include": ["packages", "apps"],

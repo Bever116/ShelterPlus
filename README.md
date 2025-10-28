@@ -13,7 +13,7 @@ Stage 1 implementation of the ShelterPlus platform. This repository contains a p
 ```bash
 pnpm install
 docker compose up -d
-pnpm prisma migrate dev --schema prisma/schema.prisma
+pnpm --filter @shelterplus/api exec prisma migrate dev --schema prisma/schema.prisma
 pnpm --filter @shelterplus/api dev
 pnpm --filter @shelterplus/web dev
 ```
