@@ -1,3 +1,5 @@
+import shelterPlusRaw from '../../../Shelter+.json';
+
 export type PlayerStatus = 'ALIVE' | 'OUT';
 export type PlayerRole = 'PLAYER' | 'SPECTATOR';
 
@@ -233,16 +235,104 @@ export const OFFICIAL_CONFIG_JSON = `[
   }
 ]`;
 
-export const CATEGORY_DEFAULTS: Record<CardCategory, string[]> = {
-  Profession: ['Biologist', 'Engineer', 'Artist'],
-  Bio: ['Age 25', 'Age 35', 'Age 42'],
-  Health: ['Perfect health', 'Asthma', 'Diabetic'],
-  Hobby: ['Gardening', 'Chess', 'Rock climbing'],
-  Phobia: ['Fear of heights', 'Claustrophobic', 'Fear of spiders'],
-  Personality: ['Optimistic', 'Pessimistic', 'Leader'],
-  ExtraInfo: ['Knows first aid', 'Won a lottery', 'Is a twin'],
-  Knowledge: ['Survival skills', 'Medical training', 'Mechanical skills'],
-  Luggage: ['Backpack of tools', 'Suitcase of clothes', 'Box of canned food'],
-  ActionCard: ['Swap a card', 'Peek at a card', 'Trade information'],
-  ConditionCard: ['Lose a turn', 'Share a secret', 'Reveal a card']
+type ShelterPlusRawEntry = Record<string, string>;
+
+interface ShelterPlusRawData {
+  'Профессия': ShelterPlusRawEntry[];
+  'БИО': ShelterPlusRawEntry[];
+  'Здоровье': ShelterPlusRawEntry[];
+  'Хобби': ShelterPlusRawEntry[];
+  'Фобия': ShelterPlusRawEntry[];
+  'Характер': ShelterPlusRawEntry[];
+  'ДопИнформация': ShelterPlusRawEntry[];
+  'Знание': ShelterPlusRawEntry[];
+  'Багаж': ShelterPlusRawEntry[];
+  'Бункериапокалипсис': ShelterPlusRawEntry[];
+  'КартаДействия': ShelterPlusRawEntry[];
+  'КартаУсловия': ShelterPlusRawEntry[];
+  'Концовка': ShelterPlusRawEntry[];
+}
+
+const shelterPlusData = shelterPlusRaw as ShelterPlusRawData;
+
+const normalizeValue = (value: string) =>
+  value
+    .replace(/\r\n/g, '\n')
+    .replace(/\*\*/g, '')
+    .replace(/\u00a0/g, ' ')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .trim();
+
+const readCategoryValues = <K extends keyof ShelterPlusRawData>(key: K) =>
+  shelterPlusData[key].map((entry) => normalizeValue(entry[key] ?? ''));
+
+const getApocalypseAndBunker = (value: string) => {
+  const normalized = normalizeValue(value);
+  const markerIndex = normalized.toLowerCase().indexOf('бункер');
+
+  if (markerIndex === -1) {
+    return {
+      apocalypse: normalized,
+      bunker: 'Бункер: информация отсутствует'
+    };
+  }
+
+  const apocalypse = normalizeValue(normalized.slice(0, markerIndex));
+  const bunker = normalizeValue(normalized.slice(markerIndex));
+
+  return {
+    apocalypse: apocalypse || 'Апокалипсис: информация отсутствует',
+    bunker: bunker || 'Бункер: информация отсутствует'
+  };
 };
+
+const makeEndingTitle = (description: string) => {
+  const lines = description.split('\n').map((line) => line.trim()).filter(Boolean);
+  const firstLine = lines[0] ?? description;
+  const sentenceMatch = firstLine.match(/^(.*?[.!?])\s|^(.*)$/);
+  const rawTitle = sentenceMatch ? (sentenceMatch[1] ?? sentenceMatch[2] ?? '') : firstLine;
+  const title = rawTitle.trim();
+  if (!title.length) {
+    return 'Концовка';
+  }
+  return title.length > 120 ? `${title.slice(0, 117)}...` : title;
+};
+
+export const CATEGORY_DEFAULTS: Record<CardCategory, string[]> = {
+  Profession: readCategoryValues('Профессия'),
+  Bio: readCategoryValues('БИО'),
+  Health: readCategoryValues('Здоровье'),
+  Hobby: readCategoryValues('Хобби'),
+  Phobia: readCategoryValues('Фобия'),
+  Personality: readCategoryValues('Характер'),
+  ExtraInfo: readCategoryValues('ДопИнформация'),
+  Knowledge: readCategoryValues('Знание'),
+  Luggage: readCategoryValues('Багаж'),
+  ActionCard: readCategoryValues('КартаДействия'),
+  ConditionCard: readCategoryValues('КартаУсловия')
+};
+
+export interface ApocalypseBunkerScenario {
+  apocalypse: string;
+  bunker: string;
+}
+
+export const SHELTER_PLUS_APOCALYPSE_BUNKER_POOL: ApocalypseBunkerScenario[] =
+  shelterPlusData['Бункериапокалипсис'].map((entry) =>
+    getApocalypseAndBunker(entry['Бункериапокалипсис'] ?? '')
+  );
+
+export interface EndingScenario {
+  title: string;
+  description: string;
+}
+
+export const SHELTER_PLUS_ENDINGS: EndingScenario[] = shelterPlusData['Концовка'].map((entry) => {
+  const description = normalizeValue(entry['Концовка'] ?? '');
+  return {
+    title: makeEndingTitle(description),
+    description
+  };
+});

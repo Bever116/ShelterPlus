@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { Prisma, CardCategory, VoteSource, PlayerStatus, PlayerRole, GameAdminRole, InviteRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DiscordService } from '../discord/discord.service';
-import { APOCALYPSE_POOL, BUNKER_POOL, CATEGORY_POOLS, ENDING_POOL } from './card-pool';
+import { APOCALYPSE_BUNKER_POOL, CATEGORY_POOLS, ENDING_POOL } from './card-pool';
 import seedrandom from 'seedrandom';
 import { createHash, randomBytes } from 'crypto';
 import { CARD_CATEGORY_ORDER, type GamePublicState } from '@shelterplus/shared';
@@ -119,8 +119,7 @@ export class GameService {
     const seed = this.createSeed(lobby);
     const rng = seedrandom(seed);
 
-    const apocalypse = this.pickItem(APOCALYPSE_POOL, rng);
-    const bunker = this.pickItem(BUNKER_POOL, rng);
+    const { apocalypse, bunker } = this.pickItem(APOCALYPSE_BUNKER_POOL, rng);
     const seats = Math.floor(lobby.players.length / 2);
 
     const dealt = this.dealCards(lobby.players, enabledCategories, rng);
