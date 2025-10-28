@@ -42,7 +42,12 @@ async function bootstrap() {
     session({
       secret: sessionSecret,
       resave: false,
-      saveUninitialized: false
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        sameSite: 'none',
+        secure: true
+      }
     })
   );
 

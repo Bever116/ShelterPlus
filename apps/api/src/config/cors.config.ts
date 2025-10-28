@@ -40,7 +40,17 @@ const parseOrigins = (rawOrigins?: string | string[]): string[] => {
 
   const sanitized = origins
     .map((origin) => origin?.trim())
-    .filter((origin): origin is string => Boolean(origin) && origin !== '*');
+    .filter((origin): origin is string => {
+      if (!origin) {
+        return false;
+      }
+
+      if (origin === '*') {
+        throw new Error('API_ALLOWED_ORIGINS and NEXT_PUBLIC_WEB_URL cannot contain "*".');
+      }
+
+      return true;
+    });
 
   if (sanitized.length === 0) {
     return DEFAULT_ALLOWED_ORIGINS;
