@@ -4,8 +4,12 @@
   "private": true,
   "scripts": {
     "build": "nest build",
+    "prisma:generate": "prisma generate",
+    "prestart": "prisma generate",
     "start": "nest start",
+    "prestart:dev": "prisma generate",
     "start:dev": "nest start --watch",
+    "predev": "prisma generate",
     "dev": "nest start --watch",
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
