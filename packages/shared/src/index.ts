@@ -235,7 +235,7 @@ export const OFFICIAL_CONFIG_JSON = `[
   }
 ]`;
 
-type ShelterPlusRawEntry = Record<string, string>;
+type ShelterPlusRawEntry = Record<string, string | undefined>;
 
 interface ShelterPlusRawData {
   'Профессия': ShelterPlusRawEntry[];
