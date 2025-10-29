@@ -13,14 +13,18 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "prepare": "pnpm run build",
     "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
-    "zod": "3.22.4"
+    "zod": "3.22.4",
+    "pino": "8.17.0",
+    "pino-pretty": "10.3.1"
   },
   "devDependencies": {
     "tsup": "7.2.0",

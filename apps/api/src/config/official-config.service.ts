@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { PinoLoggerService } from '../logging/logger.service';
 import { ConfigService } from '@nestjs/config';
 
 export interface OfficialConfig {
@@ -10,10 +11,12 @@ export interface OfficialConfig {
 
 @Injectable()
 export class OfficialConfigService {
-  private readonly logger = new Logger(OfficialConfigService.name);
+  private readonly logger: PinoLoggerService;
   private cached: OfficialConfig[] | null = null;
 
-  constructor(private config: ConfigService) {}
+  constructor(private config: ConfigService, logger: PinoLoggerService) {
+    this.logger = logger.forContext(OfficialConfigService.name);
+  }
 
   getAll(): OfficialConfig[] {
     if (this.cached) {
@@ -31,7 +34,7 @@ export class OfficialConfigService {
       );
       return this.cached;
     } catch (error) {
-      this.logger.error('Failed to parse OFFICIAL_CONFIG_JSON', error as Error);
+      this.logger.error('Failed to parse OFFICIAL_CONFIG_JSON', (error as Error).stack, { module: 'OfficialConfigService' });
       this.logParsingHint(raw, error as Error);
       this.cached = [];
       return this.cached;

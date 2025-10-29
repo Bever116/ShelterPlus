@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { apiLogger } from '../logging/pino.factory';
 import { CorsOptions } from '@nestjs/common/interfaces/external/cors-options.interface';
 
 const normalizeOrigin = (origin: string): string => {
@@ -52,8 +52,8 @@ const allowedOrigins = parseOrigins(
   process.env.API_ALLOWED_ORIGINS ?? process.env.NEXT_PUBLIC_WEB_URL
 );
 
-const corsLogger = new Logger('CorsConfig');
-corsLogger.log(`Allowed origins: ${allowedOrigins.join(', ')}`);
+const corsLogger = apiLogger.child({ context: 'CorsConfig' });
+corsLogger.info({ allowedOrigins }, 'Configured allowed origins');
 
 export const corsConfig: CorsOptions = {
   origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
