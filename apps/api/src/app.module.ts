@@ -7,12 +7,14 @@ import { GameModule } from './game/game.module';
 import { DiscordModule } from './discord/discord.module';
 import { AppConfigModule } from './config/config.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { LoggingModule } from './logging/logging.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     AppConfigModule,
     PrismaModule,
+    LoggingModule,
     DiscordModule,
     LobbyModule,
     GameModule,
